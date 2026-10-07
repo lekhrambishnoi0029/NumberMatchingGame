@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft 3D Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+            background: #000;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        #ui {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .hud {
+            position: absolute;
+            color: white;
+            font-size: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            font-weight: bold;
+        }
+
+        .top-left { top: 20px; left: 20px; }
+        .bottom-center { bottom: 50px; left: 50%; transform: translateX(-50%); text-align: center; }
+        .top-right { top: 20px; right: 20px; text-align: right; }
+
+        .crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.5);
+            border-radius: 50%;
+        }
+
+        .crosshair::before,
+        .crosshair::after {
+            content: '';
+            position: absolute;
+            background: rgba(255,255,255,0.5);
+        }
+
+        .crosshair::before {
+            width: 2px;
+            height: 8px;
+            left: 50%;
+            top: -10px;
+            transform: translateX(-50%);
+        }
+
+        .crosshair::after {
+            height: 2px;
+            width: 8px;
+            top: 50%;
+            left: -10px;
+            transform: translateY(-50%);
+        }
+
+        .hotbar {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 5px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 10px;
+        }
+
+        .hotbar-slot {
+            width: 40px;
+            height: 40px;
+            background: rgba(100,100,100,0.6);
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .hotbar-slot.active {
+            border-color: white;
+            background: rgba(150,150,150,0.8);
+        }
+
+        .mobile-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .mob-btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: rgba(0,0,0,0.6);
+            border: 2px solid rgba(255,255,255,0.5);
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            pointer-events: all;
+            transition: all 0.1s;
+        }
+
+        .mob-btn:active {
+            transform: scale(0.95);
+            background: rgba(0,0,0,0.8);
+        }
+
+        .jump-btn {
+            position: absolute;
+            bottom: 100px;
+            right: 20px;
+        }
+
+        #stats {
+            background: rgba(0,0,0,0.7);
+            padding: 10px 15px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="ui">
+        <div class="hud top-left">
+            <div id="stats">
+                <div>❤️ Health: <span id="health">20</span></div>
+                <div>🍖 Hunger: <span id="hunger">20</span></div>
+                <div>⛏️ Tool: <span id="tool">Stone Pickaxe</span></div>
+            </div>
+        </div>
+        <div class="hud top-right">
+            <div id="coords">X: 0 Y: 0 Z: 0</div>
+            <div id="fps">FPS: 60</div>
+        </div>
+        <div class="crosshair"></div>
+        <div class="hotbar">
+            <div class="hotbar-slot active" data-block="stone">🪨</div>
+            <div class="hotbar-slot" data-block="dirt">🟫</div>
+            <div class="hotbar-slot" data-block="grass">🟩</div>
+            <div class="hotbar-slot" data-block="wood">🟪</div>
+            <div class="hotbar-slot" data-block="sand">🟨</div>
+        </div>
+        <div class="mobile-controls">
+            <button class="mob-btn jump-btn">⬆️</button>
+            <button class="mob-btn">➡️</button>
+        </div>
+    </div>
+
+    <script>
+        // Three.js CDN
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+        script.onload = initGame;
+        document.head.appendChild(script);
+
+        let scene, camera, renderer, world = {};
+        let player = {
+            pos: { x: 0, y: 80, z: 0 },
+            vel: { x: 0, y: 0, z: 0 },
+            rot: { x: 0, y: 0 },
+            onGround: false,
+            health: 20,
+            hunger: 20,
+            selectedBlock: 'stone'
+        };
+
+        const BLOCK_SIZE = 1;
+        const GRAVITY = -0.015;
+        const SPEED = 0.3;
+        const CHUNK_SIZE = 16;
+        const chunks = new Map();
+
+        const blockColors = {
+            stone: 0x888888,
+            dirt: 0x8B4513,
+            grass: 0x00AA00,
+            wood: 0x654321,
+            sand: 0xFFD700,
+            water: 0x0066FF,
+            leaves: 0x228B22,
+            bedrock: 0x1a1a1a
+        };
+
+        function initGame() {
+            // Scene Setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB);
+            scene.fog = new THREE.Fog(0x87CEEB, 200, 500);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(player.pos.x, player.pos.y, player.pos.z);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFShadowShadowMap;
+            document.body.appendChild(renderer.domElement);
+
+            // Lighting
+            const light = new THREE.DirectionalLight(0xffffff, 1);
+            light.position.set(100, 100, 100);
+            light.castShadow = true;
+            light.shadow.mapSize.width = 4096;
+            light.shadow.mapSize.height = 4096;
+            light.shadow.camera.far = 500;
+            light.shadow.camera.left = -200;
+            light.shadow.camera.right = 200;
+            light.shadow.camera.top = 200;
+            light.shadow.camera.bottom = -200;
+            scene.add(light);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            // Generate Initial World
+            generateWorldAround(player.pos.x, player.pos.z);
+
+            // Input Setup
+            setupControls();
+
+            // Start Game Loop
+            gameLoop();
+
+            // Handle Window Resize
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        function generateWorldAround(centerX, centerZ) {
+            const chunkX = Math.floor(centerX / CHUNK_SIZE);
+            const chunkZ = Math.floor(centerZ / CHUNK_SIZE);
+
+            for (let x = chunkX - 2; x <= chunkX + 2; x++) {
+                for (let z = chunkZ - 2; z <= chunkZ + 2; z++) {
+                    const key = `${x},${z}`;
+                    if (!chunks.has(key)) {
+                        generateChunk(x, z);
+                    }
+                }
+            }
+        }
+
+        function generateChunk(chunkX, chunkZ) {
+            const key = `${chunkX},${chunkZ}`;
+            if (chunks.has(key)) return;
+
+            const chunk = new THREE.Group();
+            const baseX = chunkX * CHUNK_SIZE;
+            const baseZ = chunkZ * CHUNK_SIZE;
+
+            // Noise-like terrain generation
+            for (let x = 0; x < CHUNK_SIZE; x++) {
+                for (let z = 0; z < CHUNK_SIZE; z++) {
+                    const worldX = baseX + x;
+                    const worldZ = baseZ + z;
+                    
+                    // Simple height calculation
+                    const height = Math.floor(
+                        50 + 
+                        10 * Math.sin(worldX * 0.1) * Math.cos(worldZ * 0.1) +
+                        5 * Math.sin(worldX * 0.05) +
+                        5 * Math.cos(worldZ * 0.05)
+                    );
+
+                    // Create blocks from ground to height
+                    for (let y = 0; y <= height; y++) {
+                        let blockType = 'stone';
+                        if (y === height) blockType = 'grass';
+                        else if (y > height - 3) blockType = 'dirt';
+                        else if (y === 0) blockType = 'bedrock';
+
+                        createBlock(worldX, y, worldZ, blockType, chunk);
+                    }
+
+                    // Add trees occasionally
+                    if (Math.random() < 0.02 && height > 40) {
+                        createTree(worldX, height + 1, worldZ, chunk);
+                    }
+
+                    // Add water
+                    if (height < 45) {
+                        for (let y = height + 1; y <= 45; y++) {
+                            createBlock(worldX, y, worldZ, 'water', chunk);
+                        }
+                    }
+                }
+            }
+
+            scene.add(chunk);
+            chunks.set(key, chunk);
+        }
+
+        function createBlock(x, y, z, type, parent) {
+            const geometry = new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+            const material = new THREE.MeshStandardMaterial({
+                color: blockColors[type],
+                roughness: 0.8,
+                metalness: 0.1
+            });
+
+            if (type === 'water') {
+                material.transparent = true;
+                material.opacity = 0.6;
+            }
+
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(x + BLOCK_SIZE/2, y + BLOCK_SIZE/2, z + BLOCK_SIZE/2);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mesh.userData = { type, x, y, z };
+            parent.add(mesh);
+        }
+
+        function createTree(x, y, z, parent) {
+            // Trunk
+            for (let i = 0; i < 6; i++) {
+                createBlock(x, y + i, z, 'wood', parent);
+            }
+            // Leaves
+            for (let dx = -2; dx <= 2; dx++) {
+                for (let dz = -2; dz <= 2; dz++) {
+                    if (Math.abs(dx) === 2 && Math.abs(dz) === 2) continue;
+                    for (let i = 0; i < 4; i++) {
+                        createBlock(x + dx, y + 3 + i, z + dz, 'leaves', parent);
+                    }
+                }
+            }
+        }
+
+        let keys = {};
+        const moveVector = new THREE.Vector3();
+
+        function setupControls() {
+            // Keyboard
+            window.addEventListener('keydown', (e) => {
+                keys[e.key.toLowerCase()] = true;
+                if (e.key === ' ') {
+                    jump();
+                    e.preventDefault();
+                }
+            });
+            window.addEventListener('keyup', (e) => {
+                keys[e.key.toLowerCase()] = false;
+            });
+
+            // Mouse Look
+            document.addEventListener('click', () => {
+                document.body.requestPointerLock();
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (document.pointerLockElement) {
+                    player.rot.y += e.movementX * 0.003;
+                    player.rot.x += e.movementY * 0.003;
+                    player.rot.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, player.rot.x));
+                }
+            });
+
+            // Mobile Touch Controls
+            document.addEventListener('touchstart', (e) => {
+                if (e.target.classList.contains('jump-btn')) {
+                    jump();
+                }
+            });
+
+            // Block Selection
+            document.querySelectorAll('.hotbar-slot').forEach(slot => {
+                slot.addEventListener('click', () => {
+                    document.querySelectorAll('.hotbar-slot').forEach(s => s.classList.remove('active'));
+                    slot.classList.add('active');
+                    player.selectedBlock = slot.dataset.block;
+                    updateUI();
+                });
+            });
+
+            // Block Breaking/Placing
+            document.addEventListener('click', (e) => {
+                if (!document.pointerLockElement) return;
+                
+                const raycaster = new THREE.Raycaster();
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+                
+                const intersects = raycaster.intersectObjects(scene.children, true);
+                if (intersects.length > 0) {
+                    const obj = intersects[0].object;
+                    if (obj.userData.type) {
+                        scene.remove(obj);
+                    }
+                }
+            });
+
+            document.addEventListener('contextmenu', (e) => {
+                if (!document.pointerLockElement) return;
+                e.preventDefault();
+                
+                const raycaster = new THREE.Raycaster();
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+                
+                const intersects = raycaster.intersectObjects(scene.children, true);
+                if (intersects.length > 0) {
+                    const obj = intersects[0].object;
+                    const normal = intersects[0].face.normal;
+                    normal.transformDirection(obj.matrixWorld);
+                    
+                    const newX = obj.userData.x + normal.x;
+                    const newY = obj.userData.y + normal.y;
+                    const newZ = obj.userData.z + normal.z;
+                    
+                    createBlock(newX, newY, newZ, player.selectedBlock, scene);
+                }
+            });
+        }
+
+        function jump() {
+            if (player.onGround) {
+                player.vel.y = 0.5;
+                player.onGround = false;
+            }
+        }
+
+        let lastFrameTime = Date.now();
+        let frameCount = 0;
+
+        function gameLoop() {
+            requestAnimationFrame(gameLoop);
+
+            // FPS Counter
+            frameCount++;
+            const now = Date.now();
+            if (now - lastFrameTime > 1000) {
+                document.getElementById('fps').textContent = `FPS: ${frameCount}`;
+                frameCount = 0;
+                lastFrameTime = now;
+            }
+
+            // Movement
+            moveVector.set(0, 0, 0);
+            if (keys['w']) moveVector.z -= SPEED;
+            if (keys['s']) moveVector.z += SPEED;
+            if (keys['a']) moveVector.x -= SPEED;
+            if (keys['d']) moveVector.x += SPEED;
+
+            moveVector.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rot.y);
+
+            player.pos.x += moveVector.x;
+            player.pos.z += moveVector.z;
+
+            // Gravity & Collision
+            player.vel.y += GRAVITY;
+            player.pos.y += player.vel.y;
+
+            // Ground collision
+            if (player.pos.y <= 62) {
+                player.pos.y = 62;
+                player.vel.y = 0;
+                player.onGround = true;
+            } else {
+                player.onGround = false;
+            }
+
+            // Hunger decrease
+            if (Math.random() < 0.002) {
+                player.hunger = Math.max(0, player.hunger - 1);
+            }
+
+            // Generate chunks around player
+            generateWorldAround(player.pos.x, player.pos.z);
+
+            // Update camera
+            camera.position.set(player.pos.x, player.pos.y + 1.7, player.pos.z);
+            camera.rotation.order = 'YXZ';
+            camera.rotation.y = player.rot.y;
+            camera.rotation.x = player.rot.x;
+
+            // Update UI
+            document.getElementById('coords').textContent = 
+                `X: ${Math.floor(player.pos.x)} Y: ${Math.floor(player.pos.y)} Z: ${Math.floor(player.pos.z)}`;
+            document.getElementById('health').textContent = player.health;
+            document.getElementById('hunger').textContent = player.hunger;
+
+            renderer.render(scene, camera);
+        }
+
+        function updateUI() {
+            document.getElementById('tool').textContent = player.selectedBlock.toUpperCase();
+        }
+
+        // Prevent zoom on mobile
+        document.addEventListener('touchmove', (e) => {
+            if (e.touches.length > 1) e.preventDefault();
+        }, { passive: false });
+    </script>
+</body>
+</html>
