@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>कोड रनर</title>
+<style>
+:root{--bg:#1b1f2a;--pn:#242a38;--ln:#363e52;--tx:#e8ebf3;--mu:#97a0b6;--ac:#ffb454;--er:#ff6b7a;--wn:#ffd166;box-sizing:border-box}
+*{box-sizing:inherit}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--tx);font-family:"Noto Sans Devanagari","Mangal","Segoe UI",system-ui,sans-serif;display:flex;flex-direction:column;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+header{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--ln)}
+header b{font-size:1.1rem}
+button{font:inherit;font-family:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--ln);background:var(--pn);color:var(--tx);padding:7px 12px}
+button:focus-visible,textarea:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+#run{background:var(--ac);color:#241a05;border-color:var(--ac);font-weight:700}
+main{flex:1;min-height:0;display:flex;flex-direction:column}
+section{display:flex;flex-direction:column;min-height:0;flex:1}
+#tabs{display:flex;gap:6px;padding:8px 12px 0;overflow-x:auto}#tabs button{white-space:nowrap}#out.fs{position:fixed;inset:0;z-index:5;background:var(--bg);padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+#tabs button{border-bottom-left-radius:0;border-bottom-right-radius:0;color:var(--mu)}
+#tabs button.on{color:var(--ac);border-color:var(--ac);background:var(--bg)}
+#code{flex:1;min-height:0;width:100%;resize:none;border:0;border-top:1px solid var(--ln);background:var(--bg);color:var(--tx);font:14px/1.5 ui-monospace,Consolas,Menlo,monospace;padding:12px;tab-size:2;white-space:pre}
+.lbl{display:flex;justify-content:space-between;align-items:center;padding:6px 12px;background:var(--pn);border-top:1px solid var(--ln);color:var(--mu);font-size:.85rem}
+.lbl button{padding:2px 10px;font-size:.8rem}
+#view{flex:1;min-height:0;width:100%;border:0;background:#fff}
+#con{margin:0;height:72px;overflow:auto;padding:8px 12px;background:#12151d;font:13px/1.45 ui-monospace,Consolas,Menlo,monospace;white-space:pre-wrap;word-break:break-word}
+#con .error{color:var(--er)}#con .warn{color:var(--wn)}#con:empty::before{content:"यहाँ console.log का नतीजा दिखेगा";color:var(--mu)}
+@media (min-width:760px){main{flex-direction:row}section{flex:1}#ed{border-right:1px solid var(--ln)}#con{height:140px}}
+</style>
+</head>
+<body>
+<header>
+  <b>कोड रनर</b>
+  <div><button id="reset">नया</button> <button id="run">▶ चलाएँ</button></div>
+</header>
+<main>
+  <section id="ed">
+    <nav id="tabs"><button data-k="html" class="on">HTML</button><button data-k="css">CSS</button><button data-k="js">JavaScript</button><button data-k="full">पूरा पेज</button></nav>
+    <textarea id="code" spellcheck="false" autocapitalize="off" autocorrect="off" aria-label="कोड लिखें"></textarea>
+  </section>
+  <section id="out">
+    <div class="lbl">नतीजा <button id="fs">पूरी स्क्रीन</button></div>
+    <iframe id="view" title="नतीजा" sandbox="allow-scripts allow-modals"></iframe>
+    <div class="lbl">कंसोल <button id="clr">साफ़ करें</button></div>
+    <pre id="con"></pre>
+  </section>
+</main>
+<script>
+const K=["html","css","js","full"];
+const DEF={
+  html:'<h1>नमस्ते!</h1>\n<button id="b">क्लिक करें</button>\n<p id="p"></p>',
+  css:'body{font-family:sans-serif;text-align:center;padding:24px}\nbutton{font-size:18px;padding:10px 20px}',
+  full:'<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n<title>मेरा पेज</title>\n<style>body{font-family:sans-serif;padding:24px}</style>\n</head>\n<body>\n<h2>पूरा HTML यहाँ चिपकाएँ</h2>\n<script>console.log("पूरा पेज चल रहा है")<\/script>\n</body>\n</html>',
+  js:'let n=0;\ndocument.getElementById("b").onclick=()=>{\n  n++;\n  document.getElementById("p").textContent="क्लिक: "+n;\n  console.log("क्लिक", n);\n};'
+};
+const $=id=>document.getElementById(id);
+const ta=$("code"),con=$("con"),view=$("view");
+let S={},cur="html",armed=0;
+try{S=JSON.parse(localStorage.getItem("cr_code")||"{}")}catch(e){}
+K.forEach(k=>{if(typeof S[k]!=="string")S[k]=DEF[k]});
+function save(){try{localStorage.setItem("cr_code",JSON.stringify(S))}catch(e){}}
+function show(k){
+  S[cur]=ta.value;cur=k;ta.value=S[k];
+  document.querySelectorAll("#tabs button").forEach(b=>b.classList.toggle("on",b.dataset.k===k));
+}
+document.querySelectorAll("#tabs button").forEach(b=>b.onclick=()=>show(b.dataset.k));
+ta.oninput=()=>{S[cur]=ta.value;save()};
+ta.onkeydown=e=>{
+  if(e.key==="Tab"){e.preventDefault();const s=ta.selectionStart;ta.setRangeText("  ",s,ta.selectionEnd,"end");ta.oninput()}
+  if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){e.preventDefault();run()}
+};
+function logLine(t,m){
+  const d=document.createElement("div");d.className=t;d.textContent=m;
+  con.appendChild(d);con.scrollTop=con.scrollHeight;
+}
+const HOOK='<script>(function(){var p=function(t,a){parent.postMessage({cr:1,t:t,m:a.map(function(x){try{return typeof x==="object"?JSON.stringify(x):String(x)}catch(e){return String(x)}}).join(" ")},"*")};["log","info","warn","error"].forEach(function(f){console[f]=function(){p(f,[].slice.call(arguments))}});window.onerror=function(m,s,l){p("error",[m+" (लाइन "+l+")"])};window.addEventListener("unhandledrejection",function(e){p("error",[e.reason])})})();<\/script>';
+function run(){
+  S[cur]=ta.value;save();con.textContent="";
+  if(cur==="full"){
+    let d=S.full;
+    const m=d.match(/<head[^>]*>/i)||d.match(/<html[^>]*>/i)||d.match(/<!doctype[^>]*>/i);
+    view.srcdoc=m?d.slice(0,m.index+m[0].length)+HOOK+d.slice(m.index+m[0].length):HOOK+d;
+    return;
+  }
+  view.srcdoc='<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+HOOK+'<style>'+S.css+'</style></head><body>'+S.html+'<script>'+S.js+'<\/script></body></html>';
+}
+addEventListener("message",e=>{
+  if(e.source===view.contentWindow&&e.data&&e.data.cr)logLine(e.data.t,e.data.m);
+});
+$("run").onclick=run;
+$("fs").onclick=()=>{const o=$("out").classList.toggle("fs");$("fs").textContent=o?"वापस":"पूरी स्क्रीन"};
+$("clr").onclick=()=>{con.textContent=""};
+$("reset").onclick=()=>{
+  const b=$("reset");
+  if(!armed){armed=1;b.textContent="पक्का?";setTimeout(()=>{armed=0;b.textContent="नया"},3000);return}
+  armed=0;b.textContent="नया";S={...DEF};save();ta.value=S[cur];con.textContent="";run();
+};
+ta.value=S[cur];run();
+</script>
+</body>
+</html>
